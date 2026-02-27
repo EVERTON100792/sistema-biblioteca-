@@ -7,6 +7,7 @@ export interface Book {
   isbn: string;
   editionYear: number;
   location: string; // Genre or Subject
+  collection?: string; // Optional book series/collection name
 }
 
 export interface Loan {

@@ -147,6 +147,7 @@ export default function App() {
   const handleSaveBook = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     const formData = new FormData(e.currentTarget);
+    const hasCollection = formData.get('hasCollection') === 'yes';
     const bookData = {
       title: formData.get('title') as string,
       author: formData.get('author') as string,
@@ -155,6 +156,7 @@ export default function App() {
       isbn: formData.get('isbn') as string,
       editionYear: parseInt(formData.get('editionYear') as string),
       location: formData.get('location') as string,
+      collection: hasCollection ? (formData.get('collection') as string) || undefined : undefined,
     };
 
     if (editingBook) {
@@ -194,22 +196,32 @@ export default function App() {
   const handleSaveLoan = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     const formData = new FormData(e.currentTarget);
-    const studentId = formData.get('studentId') as string;
     const bookId = formData.get('bookId') as string;
+    const studentName = (formData.get('studentName') as string).trim();
+    const studentClass = (formData.get('studentClass') as string).trim();
 
     const book = data.books.find(b => b.id === bookId);
-    if (!book) return;
+    if (!book || !studentName || !studentClass) return;
 
-    const student = data.students.find(s => s.id === studentId);
-    if (!student) return;
+    // Find existing student or create a new one
+    let student = data.students.find(
+      s => s.name.toLowerCase() === studentName.toLowerCase() && s.class.toLowerCase() === studentClass.toLowerCase()
+    );
+
+    let updatedStudents = data.students;
+    if (!student) {
+      student = { id: crypto.randomUUID(), name: studentName, class: studentClass };
+      updatedStudents = [...data.students, student];
+    }
 
     if (editingLoan) {
       setData(prev => ({
         ...prev,
+        students: updatedStudents,
         loans: prev.loans.map(l => l.id === editingLoan.id ? {
           ...l,
-          studentName: student.name,
-          studentClass: student.class,
+          studentName: student!.name,
+          studentClass: student!.class,
           bookId: book.id,
           bookTitle: book.title,
         } : l)
@@ -229,12 +241,13 @@ export default function App() {
       };
       setData(prev => ({
         ...prev,
+        students: updatedStudents,
         loans: [...prev.loans, newLoan]
       }));
     }
     setShowLoanForm(false);
     setEditingLoan(null);
-    setSelectedStudentId(''); // Reset the selected student
+    setSelectedStudentId('');
   };
 
   const handleReturnBook = (loanId: string) => {
@@ -399,7 +412,7 @@ export default function App() {
         </header>
 
         {/* Content Area */}
-        <div className="flex-1 overflow-y-auto p-4 md:p-8 pb-24 md:pb-8">
+        <div className="flex-1 overflow-hidden flex flex-col p-4 md:p-8 pb-24 md:pb-8">
           <AnimatePresence mode="wait">
             {activeTab === 'dashboard' && (
               <motion.div
@@ -562,8 +575,8 @@ export default function App() {
                 </div>
 
                 {/* Desktop Table */}
-                <div className="hidden md:block bg-white rounded-[2rem] border border-slate-200/60 shadow-sm overflow-hidden max-h-[600px]">
-                  <div className="overflow-y-auto custom-scrollbar">
+                <div className="hidden md:flex flex-col flex-1 bg-white rounded-[2rem] border border-slate-200/60 shadow-sm overflow-hidden min-h-[400px]">
+                  <div className="overflow-y-auto custom-scrollbar flex-1 relative">
                     <table className="w-full text-left border-collapse">
                       <thead className="sticky top-0 z-10">
                         <tr className="bg-slate-50 border-b border-slate-100">
@@ -646,8 +659,8 @@ export default function App() {
                 </div>
 
                 {/* Desktop Table */}
-                <div className="hidden md:block bg-white rounded-[2rem] border border-slate-200/60 shadow-sm overflow-hidden max-h-[600px]">
-                  <div className="overflow-y-auto custom-scrollbar">
+                <div className="hidden md:flex flex-col flex-1 bg-white rounded-[2rem] border border-slate-200/60 shadow-sm overflow-hidden min-h-[400px]">
+                  <div className="overflow-y-auto custom-scrollbar flex-1 relative">
                     <table className="w-full text-left border-collapse">
                       <thead className="sticky top-0 z-10">
                         <tr className="bg-slate-50 border-b border-slate-100">
@@ -740,8 +753,8 @@ export default function App() {
                 </div>
 
                 {/* Desktop Table */}
-                <div className="hidden md:block bg-white rounded-[2rem] border border-slate-200/60 shadow-sm overflow-hidden max-h-[600px]">
-                  <div className="overflow-y-auto custom-scrollbar">
+                <div className="hidden md:flex flex-col flex-1 bg-white rounded-[2rem] border border-slate-200/60 shadow-sm overflow-hidden min-h-[400px]">
+                  <div className="overflow-y-auto custom-scrollbar flex-1 relative">
                     <table className="w-full text-left border-collapse">
                       <thead className="sticky top-0 z-10">
                         <tr className="bg-slate-50 border-b border-slate-100">
@@ -881,48 +894,16 @@ export default function App() {
 
 
       {/* Modals */}
-      < Modal
+      <Modal
         isOpen={showBookForm}
-        onClose={() => { setShowBookForm(false); setEditingBook(null); }
-        }
+        onClose={() => { setShowBookForm(false); setEditingBook(null); }}
         title={editingBook ? "Editar Livro" : "Cadastrar Novo Livro"}
       >
-        <form onSubmit={handleSaveBook} className="space-y-6">
-          <div className="grid grid-cols-2 gap-6">
-            <div className="col-span-2 space-y-2">
-              <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-1">Título do Livro</label>
-              <input name="title" defaultValue={editingBook?.title} required className="w-full px-5 py-3.5 bg-slate-50 border-2 border-transparent rounded-2xl focus:bg-white focus:border-brand-accent/20 outline-none transition-all font-bold text-sm" placeholder="Ex: O Senhor dos Anéis" />
-            </div>
-            <div className="col-span-2 space-y-2">
-              <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-1">Autor</label>
-              <input name="author" defaultValue={editingBook?.author} required className="w-full px-5 py-3.5 bg-slate-50 border-2 border-transparent rounded-2xl focus:bg-white focus:border-brand-accent/20 outline-none transition-all font-bold text-sm" placeholder="Ex: J.R.R. Tolkien" />
-            </div>
-            <div className="space-y-2">
-              <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-1">ISBN</label>
-              <input name="isbn" defaultValue={editingBook?.isbn} required className="w-full px-5 py-3.5 bg-slate-50 border-2 border-transparent rounded-2xl focus:bg-white focus:border-brand-accent/20 outline-none transition-all font-bold text-sm font-mono" />
-            </div>
-            <div className="space-y-2">
-              <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-1">Editora</label>
-              <input name="publisher" defaultValue={editingBook?.publisher} required className="w-full px-5 py-3.5 bg-slate-50 border-2 border-transparent rounded-2xl focus:bg-white focus:border-brand-accent/20 outline-none transition-all font-bold text-sm" />
-            </div>
-            <div className="space-y-2">
-              <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-1">Lançamento</label>
-              <input name="year" type="number" defaultValue={editingBook?.year} required className="w-full px-5 py-3.5 bg-slate-50 border-2 border-transparent rounded-2xl focus:bg-white focus:border-brand-accent/20 outline-none transition-all font-bold text-sm" />
-            </div>
-            <div className="space-y-2">
-              <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-1">Edição</label>
-              <input name="editionYear" type="number" defaultValue={editingBook?.editionYear} required className="w-full px-5 py-3.5 bg-slate-50 border-2 border-transparent rounded-2xl focus:bg-white focus:border-brand-accent/20 outline-none transition-all font-bold text-sm" />
-            </div>
-            <div className="col-span-2 space-y-2">
-              <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-1">Localização Física</label>
-              <input name="location" defaultValue={editingBook?.location} required placeholder="Ex: Corredor A, Prateleira 2" className="w-full px-5 py-3.5 bg-slate-50 border-2 border-transparent rounded-2xl focus:bg-white focus:border-brand-accent/20 outline-none transition-all font-bold text-sm" />
-            </div>
-          </div>
-          <button type="submit" className="w-full bg-brand-accent text-white py-4 rounded-2xl font-bold hover:bg-emerald-600 transition-all shadow-xl shadow-brand-accent/20 mt-4">
-            {editingBook ? "Salvar Alterações" : "Cadastrar Livro"}
-          </button>
-        </form>
-      </Modal >
+        <BookForm
+          editingBook={editingBook}
+          onSubmit={handleSaveBook}
+        />
+      </Modal>
 
       <Modal
         isOpen={showStudentForm}
@@ -952,11 +933,23 @@ export default function App() {
         <form onSubmit={handleSaveLoan} className="space-y-6">
           <div className="space-y-4">
             <div className="space-y-2">
-              <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-1">Aluno</label>
-              <SearchableStudentSelect
-                students={data.students}
-                value={selectedStudentId}
-                onChange={setSelectedStudentId}
+              <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-1">Nome do Aluno</label>
+              <input
+                name="studentName"
+                defaultValue={editingLoan?.studentName}
+                required
+                placeholder="Ex: João da Silva"
+                className="w-full px-5 py-3.5 bg-slate-50 border-2 border-transparent rounded-2xl focus:bg-white focus:border-brand-accent/20 outline-none transition-all font-bold text-sm"
+              />
+            </div>
+            <div className="space-y-2">
+              <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-1">Turma / Série</label>
+              <input
+                name="studentClass"
+                defaultValue={editingLoan?.studentClass}
+                required
+                placeholder="Ex: 5º Ano A"
+                className="w-full px-5 py-3.5 bg-slate-50 border-2 border-transparent rounded-2xl focus:bg-white focus:border-brand-accent/20 outline-none transition-all font-bold text-sm"
               />
             </div>
           </div>
@@ -981,10 +974,10 @@ export default function App() {
             <div className="bg-blue-50 p-5 rounded-2xl border border-blue-100 space-y-2">
               <div className="flex items-center gap-2 text-blue-600">
                 <Calendar className="w-4 h-4" />
-                <span className="text-xs font-bold uppercase tracking-wider">Informação de Prazo</span>
+                <span className="text-xs font-bold uppercase tracking-wider">Informação</span>
               </div>
               <p className="text-blue-700 text-xs font-medium leading-relaxed">
-                O prazo de devolução será automaticamente definido para <strong>7 dias</strong> a partir de hoje. O aluno será cadastrado automaticamente se for novo.
+                O prazo de devolução será definido para <strong>7 dias</strong> a partir de hoje. Se o aluno não estiver cadastrado, ele será <strong>cadastrado automaticamente</strong> na aba Alunos.
               </p>
             </div>
           )}
@@ -1092,6 +1085,90 @@ function LoanStatusBadge({ loan, showOverdueDays }: { loan: Loan, showOverdueDay
     <span className="inline-flex items-center px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider bg-blue-100 text-blue-700">
       Em Aberto
     </span>
+  );
+}
+
+function BookForm({ editingBook, onSubmit }: { editingBook: Book | null, onSubmit: (e: React.FormEvent<HTMLFormElement>) => void }) {
+  const [hasCollection, setHasCollection] = useState<boolean>(!!editingBook?.collection);
+
+  return (
+    <form onSubmit={onSubmit} className="space-y-6">
+      <div className="grid grid-cols-2 gap-6">
+        <div className="col-span-2 space-y-2">
+          <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-1">Título do Livro</label>
+          <input name="title" defaultValue={editingBook?.title} required className="w-full px-5 py-3.5 bg-slate-50 border-2 border-transparent rounded-2xl focus:bg-white focus:border-brand-accent/20 outline-none transition-all font-bold text-sm" placeholder="Ex: O Senhor dos Anéis" />
+        </div>
+        <div className="col-span-2 space-y-2">
+          <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-1">Autor</label>
+          <input name="author" defaultValue={editingBook?.author} required className="w-full px-5 py-3.5 bg-slate-50 border-2 border-transparent rounded-2xl focus:bg-white focus:border-brand-accent/20 outline-none transition-all font-bold text-sm" placeholder="Ex: J.R.R. Tolkien" />
+        </div>
+        <div className="space-y-2">
+          <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-1">ISBN</label>
+          <input name="isbn" defaultValue={editingBook?.isbn} required className="w-full px-5 py-3.5 bg-slate-50 border-2 border-transparent rounded-2xl focus:bg-white focus:border-brand-accent/20 outline-none transition-all font-bold text-sm font-mono" />
+        </div>
+        <div className="space-y-2">
+          <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-1">Editora</label>
+          <input name="publisher" defaultValue={editingBook?.publisher} required className="w-full px-5 py-3.5 bg-slate-50 border-2 border-transparent rounded-2xl focus:bg-white focus:border-brand-accent/20 outline-none transition-all font-bold text-sm" />
+        </div>
+        <div className="space-y-2">
+          <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-1">Lançamento</label>
+          <input name="year" type="number" defaultValue={editingBook?.year} required className="w-full px-5 py-3.5 bg-slate-50 border-2 border-transparent rounded-2xl focus:bg-white focus:border-brand-accent/20 outline-none transition-all font-bold text-sm" />
+        </div>
+        <div className="space-y-2">
+          <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-1">Edição</label>
+          <input name="editionYear" type="number" defaultValue={editingBook?.editionYear} required className="w-full px-5 py-3.5 bg-slate-50 border-2 border-transparent rounded-2xl focus:bg-white focus:border-brand-accent/20 outline-none transition-all font-bold text-sm" />
+        </div>
+        <div className="col-span-2 space-y-2">
+          <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-1">Localização Física</label>
+          <input name="location" defaultValue={editingBook?.location} required placeholder="Ex: Corredor A, Prateleira 2" className="w-full px-5 py-3.5 bg-slate-50 border-2 border-transparent rounded-2xl focus:bg-white focus:border-brand-accent/20 outline-none transition-all font-bold text-sm" />
+        </div>
+
+        {/* Collection Toggle */}
+        <div className="col-span-2 space-y-3">
+          <div className="flex items-center justify-between p-4 bg-slate-50 rounded-2xl border-2 border-transparent">
+            <div>
+              <p className="text-sm font-bold text-slate-700">Este livro pertence a uma coleção?</p>
+              <p className="text-xs text-slate-400 font-medium mt-0.5">Ex: Harry Potter, Narnia, Percy Jackson...</p>
+            </div>
+            <div className="flex items-center gap-2 shrink-0">
+              <input type="hidden" name="hasCollection" value={hasCollection ? 'yes' : 'no'} />
+              <button
+                type="button"
+                onClick={() => setHasCollection(false)}
+                className={cn("px-4 py-2 rounded-xl font-bold text-xs transition-all", !hasCollection ? "bg-rose-100 text-rose-600" : "bg-white text-slate-400 hover:bg-slate-100")}
+              >
+                Não
+              </button>
+              <button
+                type="button"
+                onClick={() => setHasCollection(true)}
+                className={cn("px-4 py-2 rounded-xl font-bold text-xs transition-all", hasCollection ? "bg-brand-accent/15 text-brand-accent" : "bg-white text-slate-400 hover:bg-slate-100")}
+              >
+                Sim
+              </button>
+            </div>
+          </div>
+          <AnimatePresence>
+            {hasCollection && (
+              <motion.div
+                initial={{ opacity: 0, height: 0 }}
+                animate={{ opacity: 1, height: 'auto' }}
+                exit={{ opacity: 0, height: 0 }}
+                className="overflow-hidden"
+              >
+                <div className="space-y-2 pt-1">
+                  <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-1">Nome da Coleção</label>
+                  <input name="collection" defaultValue={editingBook?.collection} required={hasCollection} placeholder="Ex: Harry Potter" className="w-full px-5 py-3.5 bg-slate-50 border-2 border-brand-accent/20 rounded-2xl focus:bg-white outline-none transition-all font-bold text-sm" />
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </div>
+      </div>
+      <button type="submit" className="w-full bg-brand-accent text-white py-4 rounded-2xl font-bold hover:bg-emerald-600 transition-all shadow-xl shadow-brand-accent/20 mt-4">
+        {editingBook ? "Salvar Alterações" : "Cadastrar Livro"}
+      </button>
+    </form>
   );
 }
 
