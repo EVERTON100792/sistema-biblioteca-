@@ -123,18 +123,22 @@ export default function App() {
   }, [data]);
 
   const filteredBooks = useMemo(() => {
-    return data.books.filter(b =>
-      b.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      b.author.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      b.isbn.includes(searchTerm)
-    );
+    return data.books
+      .filter(b =>
+        b.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        b.author.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        b.isbn.includes(searchTerm)
+      )
+      .sort((a, b) => a.title.localeCompare(b.title, 'pt-BR'));
   }, [data.books, searchTerm]);
 
   const filteredStudents = useMemo(() => {
-    return data.students.filter(s =>
-      s.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      s.class.toLowerCase().includes(searchTerm.toLowerCase())
-    );
+    return data.students
+      .filter(s =>
+        s.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        s.class.toLowerCase().includes(searchTerm.toLowerCase())
+      )
+      .sort((a, b) => a.class.localeCompare(b.class, 'pt-BR', { numeric: true }) || a.name.localeCompare(b.name, 'pt-BR'));
   }, [data.students, searchTerm]);
 
   const filteredLoans = useMemo(() => {
@@ -154,6 +158,7 @@ export default function App() {
       year: parseInt(formData.get('year') as string),
       publisher: formData.get('publisher') as string,
       isbn: formData.get('isbn') as string,
+      barcode: (formData.get('barcode') as string) || undefined,
       editionYear: parseInt(formData.get('editionYear') as string),
       location: formData.get('location') as string,
       collection: hasCollection ? (formData.get('collection') as string) || undefined : undefined,
@@ -955,20 +960,10 @@ export default function App() {
           </div>
           <div className="space-y-2">
             <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-1">Livro</label>
-            <div className="relative">
-              <select
-                name="bookId"
-                required
-                defaultValue={editingLoan?.bookId}
-                className="w-full px-5 py-3.5 bg-slate-50 border-2 border-transparent rounded-2xl focus:bg-white focus:border-brand-accent/20 outline-none transition-all font-bold text-sm appearance-none"
-              >
-                <option value="">Selecione um livro...</option>
-                {data.books.map(book => (
-                  <option key={book.id} value={book.id}>{book.title} ({book.author})</option>
-                ))}
-              </select>
-              <ChevronDown className="absolute right-5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
-            </div>
+            <SearchableBookSelect
+              books={data.books}
+              defaultValue={editingLoan?.bookId}
+            />
           </div>
           {!editingLoan && (
             <div className="bg-blue-50 p-5 rounded-2xl border border-blue-100 space-y-2">
@@ -1107,6 +1102,10 @@ function BookForm({ editingBook, onSubmit }: { editingBook: Book | null, onSubmi
           <input name="isbn" defaultValue={editingBook?.isbn} required className="w-full px-5 py-3.5 bg-slate-50 border-2 border-transparent rounded-2xl focus:bg-white focus:border-brand-accent/20 outline-none transition-all font-bold text-sm font-mono" />
         </div>
         <div className="space-y-2">
+          <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-1">Código de Barras</label>
+          <input name="barcode" defaultValue={editingBook?.barcode} placeholder="Ex: 7891234567890" className="w-full px-5 py-3.5 bg-slate-50 border-2 border-transparent rounded-2xl focus:bg-white focus:border-brand-accent/20 outline-none transition-all font-bold text-sm font-mono" />
+        </div>
+        <div className="space-y-2">
           <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-1">Editora</label>
           <input name="publisher" defaultValue={editingBook?.publisher} required className="w-full px-5 py-3.5 bg-slate-50 border-2 border-transparent rounded-2xl focus:bg-white focus:border-brand-accent/20 outline-none transition-all font-bold text-sm" />
         </div>
@@ -1169,6 +1168,91 @@ function BookForm({ editingBook, onSubmit }: { editingBook: Book | null, onSubmi
         {editingBook ? "Salvar Alterações" : "Cadastrar Livro"}
       </button>
     </form>
+  );
+}
+
+function SearchableBookSelect({ books, defaultValue }: { books: Book[], defaultValue?: string }) {
+  const [selectedId, setSelectedId] = useState(defaultValue || '');
+  const [isOpen, setIsOpen] = useState(false);
+  const [search, setSearch] = useState('');
+
+  const selectedBook = books.find(b => b.id === selectedId);
+  const filteredBooks = useMemo(() => {
+    const q = search.toLowerCase();
+    return books
+      .filter(b =>
+        b.title.toLowerCase().includes(q) ||
+        b.isbn.includes(q) ||
+        (b.barcode || '').includes(q) ||
+        b.author.toLowerCase().includes(q)
+      )
+      .sort((a, b) => a.title.localeCompare(b.title, 'pt-BR'));
+  }, [books, search]);
+
+  return (
+    <div className="relative">
+      <input type="hidden" name="bookId" value={selectedId} required />
+      <div
+        onClick={() => setIsOpen(!isOpen)}
+        className={cn(
+          "w-full px-5 py-3.5 bg-slate-50 border-2 rounded-2xl flex items-center justify-between cursor-pointer transition-all",
+          isOpen ? "bg-white border-brand-accent/20 shadow-lg shadow-brand-accent/5" : "border-transparent hover:bg-slate-100/80",
+          !selectedBook && "text-slate-400"
+        )}
+      >
+        <span className="font-bold text-sm truncate">
+          {selectedBook ? `${selectedBook.title}` : "Selecione um livro..."}
+        </span>
+        <ChevronDown className={cn("w-4 h-4 text-slate-400 transition-transform duration-300", isOpen && "rotate-180 text-brand-accent")} />
+      </div>
+      <AnimatePresence>
+        {isOpen && (
+          <>
+            <div className="fixed inset-0 z-40" onClick={() => setIsOpen(false)} />
+            <motion.div
+              initial={{ opacity: 0, y: -10, scale: 0.95 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: -10, scale: 0.95 }}
+              transition={{ duration: 0.15 }}
+              className="absolute z-50 top-full left-0 right-0 mt-2 bg-white/95 backdrop-blur-xl border border-slate-200/60 rounded-2xl shadow-2xl overflow-hidden"
+            >
+              <div className="p-3 border-b border-slate-100 bg-slate-50/50">
+                <div className="relative">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                  <input
+                    autoFocus
+                    type="text"
+                    placeholder="Pesquisar por título, ISBN ou código..."
+                    className="w-full pl-9 pr-3 py-2 bg-white border border-slate-200 rounded-xl text-sm focus:border-brand-accent/40 focus:ring-2 focus:ring-brand-accent/10 outline-none transition-all"
+                    value={search}
+                    onChange={e => setSearch(e.target.value)}
+                  />
+                </div>
+              </div>
+              <div className="max-h-60 overflow-y-auto custom-scrollbar p-2">
+                {filteredBooks.length > 0 ? (
+                  filteredBooks.map(book => (
+                    <div
+                      key={book.id}
+                      onClick={() => { setSelectedId(book.id); setIsOpen(false); setSearch(''); }}
+                      className={cn(
+                        "px-4 py-3 rounded-xl cursor-pointer transition-all flex flex-col gap-0.5",
+                        selectedId === book.id ? "bg-brand-accent/10 text-brand-accent" : "hover:bg-slate-50 text-slate-700"
+                      )}
+                    >
+                      <span className="font-bold text-sm">{book.title}</span>
+                      <span className="text-xs font-medium opacity-70">{book.author} · ISBN {book.isbn}</span>
+                    </div>
+                  ))
+                ) : (
+                  <div className="py-6 text-center text-slate-400 text-sm font-medium">Nenhum livro encontrado</div>
+                )}
+              </div>
+            </motion.div>
+          </>
+        )}
+      </AnimatePresence>
+    </div>
   );
 }
 

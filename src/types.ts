@@ -5,9 +5,10 @@ export interface Book {
   year: number;
   publisher: string;
   isbn: string;
+  barcode?: string; // Optional barcode (código de barras)
   editionYear: number;
-  location: string; // Genre or Subject
-  collection?: string; // Optional book series/collection name
+  location: string;
+  collection?: string;
 }
 
 export interface Loan {
