@@ -21,6 +21,7 @@ import {
   Bell,
   Menu,
   LogOut,
+  Lock,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { format, addDays, differenceInDays, isAfter, parseISO, isBefore, startOfDay } from 'date-fns';
@@ -29,6 +30,7 @@ import { Book, Loan, Student, LibraryData } from './types';
 import { supabase } from './lib/supabase';
 import * as db from './services/supabaseService';
 import { LoginPage } from './pages/LoginPage';
+import { ChangePasswordModal } from './components/ChangePasswordModal';
 import { cn } from './utils/cn';
 
 type Tab = 'dashboard' | 'books' | 'students' | 'loans' | 'settings';
@@ -115,6 +117,8 @@ export default function App() {
   const [showLoanForm, setShowLoanForm] = useState(false);
   const [editingLoan, setEditingLoan] = useState<Loan | null>(null);
   const [selectedStudentId, setSelectedStudentId] = useState('');
+
+  const [showPasswordModal, setShowPasswordModal] = useState(false);
 
   // Sync selectedStudentId when editingLoan changes
   useEffect(() => {
@@ -352,6 +356,14 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-brand-surface text-slate-900 font-sans flex">
+      <ChangePasswordModal
+        isOpen={showPasswordModal}
+        onClose={() => setShowPasswordModal(false)}
+        onSuccess={() => {
+          setShowPasswordModal(false);
+          showToast('Senha alterada! Use a nova senha no próximo acesso.', 'success', '🔒');
+        }}
+      />
       {/* Mobile Overlay */}
       <AnimatePresence>
         {isSidebarOpen && (
@@ -431,14 +443,23 @@ export default function App() {
               <p className="text-xs text-white/80 font-medium truncate">{(session as { user?: { email?: string } })?.user?.email ?? 'Usuário'}</p>
             </div>
           </div>
-          {/* Logout */}
-          <button
-            onClick={handleLogout}
-            className="w-full flex items-center gap-3 px-4 py-3 rounded-2xl text-white/50 hover:bg-rose-500/10 hover:text-rose-400 transition-all text-sm font-bold"
-          >
-            <LogOut className="w-4 h-4" />
-            Sair do Sistema
-          </button>
+          {/* Actions */}
+          <div className="space-y-1">
+            <button
+              onClick={() => setShowPasswordModal(true)}
+              className="w-full flex items-center gap-3 px-4 py-3 rounded-2xl text-white/70 hover:bg-white/10 transition-all text-sm font-bold"
+            >
+              <Lock className="w-4 h-4" />
+              Alterar Senha
+            </button>
+            <button
+              onClick={handleLogout}
+              className="w-full flex items-center gap-3 px-4 py-3 rounded-2xl text-white/50 hover:bg-rose-500/10 hover:text-rose-400 transition-all text-sm font-bold"
+            >
+              <LogOut className="w-4 h-4" />
+              Sair do Sistema
+            </button>
+          </div>
         </div>
       </aside>
 
