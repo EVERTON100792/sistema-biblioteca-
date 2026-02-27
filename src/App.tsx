@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import {
   Book as BookIcon,
   Users,
@@ -19,13 +19,16 @@ import {
   ChevronDown,
   X,
   Bell,
-  Menu
+  Menu,
+  LogOut,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { format, addDays, differenceInDays, isAfter, parseISO, isBefore, startOfDay } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { Book, Loan, Student, LibraryData } from './types';
-import { storageService } from './services/storageService';
+import { supabase } from './lib/supabase';
+import * as db from './services/supabaseService';
+import { LoginPage } from './pages/LoginPage';
 import { cn } from './utils/cn';
 
 type Tab = 'dashboard' | 'books' | 'students' | 'loans' | 'settings';
@@ -39,7 +42,50 @@ const tabLabels: Record<Tab, string> = {
 };
 
 export default function App() {
-  const [data, setData] = useState<LibraryData>(() => storageService.loadData());
+  // Auth state
+  const [session, setSession] = useState<unknown>(null);
+  const [authLoading, setAuthLoading] = useState(true);
+
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setSession(session);
+      setAuthLoading(false);
+    });
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      setSession(session);
+    });
+    return () => subscription.unsubscribe();
+  }, []);
+
+  const handleLogout = async () => {
+    await supabase.auth.signOut();
+    setData({ books: [], students: [], loans: [] });
+  };
+
+  // App data
+  const [data, setData] = useState<LibraryData>({ books: [], students: [], loans: [] });
+  const [dataLoading, setDataLoading] = useState(false);
+
+  const loadAllData = useCallback(async () => {
+    setDataLoading(true);
+    try {
+      const [books, students, loans] = await Promise.all([
+        db.fetchBooks(),
+        db.fetchStudents(),
+        db.fetchLoans(),
+      ]);
+      setData({ books, students, loans });
+    } catch (e) {
+      console.error('Error loading data:', e);
+    } finally {
+      setDataLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (session) loadAllData();
+  }, [session, loadAllData]);
+
   const [activeTab, setActiveTab] = useState<Tab>(() => {
     const saved = localStorage.getItem('bibliocontrol_active_tab') as Tab | null;
     const validTabs: Tab[] = ['dashboard', 'books', 'students', 'loans', 'settings'];
@@ -86,10 +132,14 @@ export default function App() {
   // Notifications
   const [notifications, setNotifications] = useState<{ id: string, message: string, type: 'warning' | 'info' }[]>([]);
 
-  // Save data whenever it changes
-  useEffect(() => {
-    storageService.saveData(data);
-  }, [data]);
+  // Toast system
+  type ToastType = 'success' | 'error' | 'info';
+  const [toasts, setToasts] = useState<{ id: string; message: string; type: ToastType; emoji: string }[]>([]);
+  const showToast = useCallback((message: string, type: ToastType = 'success', emoji = '✅') => {
+    const id = crypto.randomUUID();
+    setToasts(prev => [...prev, { id, message, type, emoji }]);
+    setTimeout(() => setToasts(prev => prev.filter(t => t.id !== id)), 3500);
+  }, []);
 
   // Check for upcoming due dates
   useEffect(() => {
@@ -148,7 +198,7 @@ export default function App() {
     ).sort((a, b) => parseISO(b.loanDate).getTime() - parseISO(a.loanDate).getTime());
   }, [data.loans, searchTerm]);
 
-  const handleSaveBook = (e: React.FormEvent<HTMLFormElement>) => {
+  const handleSaveBook = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     const formData = new FormData(e.currentTarget);
     const hasCollection = formData.get('hasCollection') === 'yes';
@@ -163,130 +213,117 @@ export default function App() {
       location: formData.get('location') as string,
       collection: hasCollection ? (formData.get('collection') as string) || undefined : undefined,
     };
-
-    if (editingBook) {
-      setData(prev => ({
-        ...prev,
-        books: prev.books.map(b => b.id === editingBook.id ? { ...b, ...bookData } : b)
-      }));
-    } else {
-      const newBook: Book = { id: crypto.randomUUID(), ...bookData };
-      setData(prev => ({ ...prev, books: [...prev.books, newBook] }));
-    }
+    try {
+      if (editingBook) {
+        await db.updateBook(editingBook.id, bookData);
+        showToast('Livro atualizado com sucesso!', 'success', '📚');
+      } else {
+        await db.insertBook(bookData);
+        showToast('Livro cadastrado com sucesso!', 'success', '📚');
+      }
+      await loadAllData();
+    } catch (e) { console.error(e); showToast('Erro ao salvar livro.', 'error', '❌'); }
     setShowBookForm(false);
     setEditingBook(null);
   };
 
-  const handleSaveStudent = (e: React.FormEvent<HTMLFormElement>) => {
+  const handleSaveStudent = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     const formData = new FormData(e.currentTarget);
-    const studentData = {
-      name: formData.get('name') as string,
-      class: formData.get('class') as string,
-    };
-
-    if (editingStudent) {
-      setData(prev => ({
-        ...prev,
-        students: prev.students.map(s => s.id === editingStudent.id ? { ...s, ...studentData } : s)
-      }));
-    } else {
-      const newStudent: Student = { id: crypto.randomUUID(), ...studentData };
-      setData(prev => ({ ...prev, students: [...prev.students, newStudent] }));
-    }
+    const studentData = { name: formData.get('name') as string, class: formData.get('class') as string };
+    try {
+      if (editingStudent) {
+        await db.updateStudent(editingStudent.id, studentData);
+        showToast('Aluno atualizado com sucesso!', 'success', '🎓');
+      } else {
+        await db.insertStudent(studentData);
+        showToast('Aluno cadastrado com sucesso!', 'success', '🎓');
+      }
+      await loadAllData();
+    } catch (e) { console.error(e); showToast('Erro ao salvar aluno.', 'error', '❌'); }
     setShowStudentForm(false);
     setEditingStudent(null);
   };
 
-  const handleSaveLoan = (e: React.FormEvent<HTMLFormElement>) => {
+  const handleSaveLoan = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     const formData = new FormData(e.currentTarget);
     const bookId = formData.get('bookId') as string;
     const studentName = (formData.get('studentName') as string).trim();
     const studentClass = (formData.get('studentClass') as string).trim();
-
     const book = data.books.find(b => b.id === bookId);
     if (!book || !studentName || !studentClass) return;
-
-    // Find existing student or create a new one
-    let student = data.students.find(
-      s => s.name.toLowerCase() === studentName.toLowerCase() && s.class.toLowerCase() === studentClass.toLowerCase()
-    );
-
-    let updatedStudents = data.students;
-    if (!student) {
-      student = { id: crypto.randomUUID(), name: studentName, class: studentClass };
-      updatedStudents = [...data.students, student];
-    }
-
-    if (editingLoan) {
-      setData(prev => ({
-        ...prev,
-        students: updatedStudents,
-        loans: prev.loans.map(l => l.id === editingLoan.id ? {
-          ...l,
-          studentName: student!.name,
-          studentClass: student!.class,
-          bookId: book.id,
-          bookTitle: book.title,
-        } : l)
-      }));
-    } else {
-      const loanDate = new Date();
-      const dueDate = addDays(loanDate, 7);
-      const newLoan: Loan = {
-        id: crypto.randomUUID(),
-        studentName: student.name,
-        studentClass: student.class,
-        bookId: book.id,
-        bookTitle: book.title,
-        loanDate: loanDate.toISOString(),
-        dueDate: dueDate.toISOString(),
-        returnDate: null,
-      };
-      setData(prev => ({
-        ...prev,
-        students: updatedStudents,
-        loans: [...prev.loans, newLoan]
-      }));
-    }
+    try {
+      // Auto-create student if needed
+      let student = data.students.find(
+        s => s.name.toLowerCase() === studentName.toLowerCase() && s.class.toLowerCase() === studentClass.toLowerCase()
+      );
+      if (!student) {
+        student = await db.insertStudent({ name: studentName, class: studentClass });
+        showToast(`Aluno "${studentName}" cadastrado automaticamente!`, 'info', '👤');
+      }
+      if (editingLoan) {
+        await db.updateLoan(editingLoan.id, {
+          studentName: student.name, studentClass: student.class,
+          bookId: book.id, bookTitle: book.title,
+        });
+        showToast('Empréstimo atualizado!', 'success', '📖');
+      } else {
+        const loanDate = new Date();
+        const dueDate = addDays(loanDate, 7);
+        await db.insertLoan({
+          studentName: student.name, studentClass: student.class,
+          bookId: book.id, bookTitle: book.title,
+          loanDate: loanDate.toISOString(), dueDate: dueDate.toISOString(), returnDate: null,
+        });
+        showToast(`Empréstimo de "${book.title}" registrado! Devolução em 7 dias.`, 'success', '📖');
+      }
+      await loadAllData();
+    } catch (e) { console.error(e); showToast('Erro ao registrar empréstimo.', 'error', '❌'); }
     setShowLoanForm(false);
     setEditingLoan(null);
     setSelectedStudentId('');
   };
 
-  const handleReturnBook = (loanId: string) => {
-    setData(prev => ({
-      ...prev,
-      loans: prev.loans.map(l =>
-        l.id === loanId ? { ...l, returnDate: new Date().toISOString() } : l
-      )
-    }));
+  const handleReturnBook = async (loanId: string) => {
+    try {
+      await db.updateLoan(loanId, { returnDate: new Date().toISOString() });
+      await loadAllData();
+      showToast('Devolução registrada com sucesso!', 'success', '🏠');
+    } catch (e) { console.error(e); showToast('Erro ao registrar devolução.', 'error', '❌'); }
   };
 
-  const executeDelete = () => {
+  const executeDelete = async () => {
     if (!confirmDelete) return;
     const { type, id } = confirmDelete;
-
-    setData(prev => {
-      const newData = { ...prev };
-      if (type === 'book') newData.books = prev.books.filter(b => b.id !== id);
-      if (type === 'student') newData.students = prev.students.filter(s => s.id !== id);
-      if (type === 'loan') newData.loans = prev.loans.filter(l => l.id !== id);
-      return newData;
-    });
+    const labels: Record<string, string> = { book: 'Livro', student: 'Aluno', loan: 'Empréstimo' };
+    try {
+      if (type === 'book') await db.deleteBook(id);
+      if (type === 'student') await db.deleteStudent(id);
+      if (type === 'loan') await db.deleteLoan(id);
+      await loadAllData();
+      showToast(`${labels[type]} excluído com sucesso!`, 'info', '🗑️');
+    } catch (e) { console.error(e); showToast('Erro ao excluir.', 'error', '❌'); }
     setConfirmDelete(null);
   };
 
   const handleExport = () => {
-    storageService.exportBackup(data);
+    const json = JSON.stringify(data, null, 2);
+    const blob = new Blob([json], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `bibliocontrol-backup-${format(new Date(), 'yyyy-MM-dd')}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
   };
 
   const handleImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
       try {
-        const importedData = await storageService.importBackup(file);
+        const text = await file.text();
+        const importedData: LibraryData = JSON.parse(text);
         if (confirm('Isso irá substituir todos os dados atuais. Continuar?')) {
           setData(importedData);
         }
@@ -295,6 +332,23 @@ export default function App() {
       }
     }
   };
+
+
+  // ── Auth gate ──────────────────────────────────────────────
+  if (authLoading) {
+    return (
+      <div className="min-h-screen bg-slate-950 flex items-center justify-center">
+        <div className="flex flex-col items-center gap-4">
+          <div className="w-12 h-12 border-4 border-emerald-500/30 border-t-emerald-500 rounded-full animate-spin" />
+          <p className="text-slate-400 text-sm font-medium">Carregando...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (!session) {
+    return <LoginPage onAuthSuccess={() => { }} />;
+  }
 
   return (
     <div className="min-h-screen bg-brand-surface text-slate-900 font-sans flex">
@@ -366,22 +420,25 @@ export default function App() {
             active={activeTab === 'loans'}
             onClick={() => setActiveTab('loans')}
           />
-          <SidebarItem
-            icon={<Download className="w-5 h-5" />}
-            label="Backup"
-            active={activeTab === 'settings'}
-            onClick={() => setActiveTab('settings')}
-          />
         </nav>
 
-        <div className="p-6">
-          <div className="bg-white/5 rounded-2xl p-4 border border-white/10">
-            <p className="text-[10px] font-bold text-white/40 uppercase tracking-widest mb-2">Sistema</p>
+        <div className="p-4 space-y-2">
+          {/* Logged user */}
+          <div className="bg-white/5 rounded-2xl px-4 py-3 border border-white/10">
+            <p className="text-[10px] font-bold text-white/40 uppercase tracking-widest mb-1">Logado como</p>
             <div className="flex items-center gap-2">
-              <div className="w-2 h-2 bg-brand-accent rounded-full animate-pulse" />
-              <p className="text-xs text-white/80 font-medium">Banco de Dados Ativo</p>
+              <div className="w-2 h-2 bg-brand-accent rounded-full animate-pulse shrink-0" />
+              <p className="text-xs text-white/80 font-medium truncate">{(session as { user?: { email?: string } })?.user?.email ?? 'Usuário'}</p>
             </div>
           </div>
+          {/* Logout */}
+          <button
+            onClick={handleLogout}
+            className="w-full flex items-center gap-3 px-4 py-3 rounded-2xl text-white/50 hover:bg-rose-500/10 hover:text-rose-400 transition-all text-sm font-bold"
+          >
+            <LogOut className="w-4 h-4" />
+            Sair do Sistema
+          </button>
         </div>
       </aside>
 
@@ -413,6 +470,13 @@ export default function App() {
                 onChange={(e) => setSearchTerm(e.target.value)}
               />
             </div>
+            <button
+              onClick={handleLogout}
+              title="Sair do sistema"
+              className="p-2 md:p-2.5 rounded-xl bg-slate-100 text-slate-400 hover:bg-rose-50 hover:text-rose-500 transition-all shrink-0"
+            >
+              <LogOut className="w-4 h-4" />
+            </button>
           </div>
         </header>
 
@@ -896,6 +960,35 @@ export default function App() {
           </div>
         </div>
       </main>
+
+      {/* Toast Notifications */}
+      <div className="fixed bottom-6 right-4 md:right-6 z-[9999] flex flex-col gap-3 pointer-events-none max-w-sm w-full">
+        <AnimatePresence>
+          {toasts.map(toast => (
+            <motion.div
+              key={toast.id}
+              initial={{ opacity: 0, y: 20, scale: 0.95 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: -10, scale: 0.95 }}
+              transition={{ type: 'spring', stiffness: 400, damping: 30 }}
+              className={cn(
+                'pointer-events-auto flex items-start gap-3 px-5 py-4 rounded-2xl shadow-2xl border backdrop-blur-md',
+                toast.type === 'success' && 'bg-emerald-50/95 border-emerald-200 text-emerald-900',
+                toast.type === 'error' && 'bg-rose-50/95 border-rose-200 text-rose-900',
+                toast.type === 'info' && 'bg-blue-50/95 border-blue-200 text-blue-900',
+              )}
+            >
+              <span className="text-xl shrink-0 mt-0.5">{toast.emoji}</span>
+              <div className="flex flex-col min-w-0">
+                <p className="font-bold text-sm leading-snug">{toast.message}</p>
+                <p className={cn(
+                  'text-xs font-medium mt-0.5 opacity-60',
+                )}>Salvo no Supabase</p>
+              </div>
+            </motion.div>
+          ))}
+        </AnimatePresence>
+      </div>
 
 
       {/* Modals */}
