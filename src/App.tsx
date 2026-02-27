@@ -68,6 +68,17 @@ export default function App() {
 
   const [showLoanForm, setShowLoanForm] = useState(false);
   const [editingLoan, setEditingLoan] = useState<Loan | null>(null);
+  const [selectedStudentId, setSelectedStudentId] = useState('');
+
+  // Sync selectedStudentId when editingLoan changes
+  useEffect(() => {
+    if (editingLoan) {
+      const studentId = data.students.find(s => s.name === editingLoan.studentName && s.class === editingLoan.studentClass)?.id || '';
+      setSelectedStudentId(studentId);
+    } else {
+      setSelectedStudentId('');
+    }
+  }, [editingLoan, data.students]);
 
   // Confirmation State
   const [confirmDelete, setConfirmDelete] = useState<{ type: 'book' | 'student' | 'loan', id: string, message: string } | null>(null);
@@ -223,6 +234,7 @@ export default function App() {
     }
     setShowLoanForm(false);
     setEditingLoan(null);
+    setSelectedStudentId(''); // Reset the selected student
   };
 
   const handleReturnBook = (loanId: string) => {
@@ -941,20 +953,11 @@ export default function App() {
           <div className="space-y-4">
             <div className="space-y-2">
               <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-1">Aluno</label>
-              <div className="relative">
-                <select
-                  name="studentId"
-                  required
-                  defaultValue={editingLoan ? data.students.find(s => s.name === editingLoan.studentName && s.class === editingLoan.studentClass)?.id || '' : ''}
-                  className="w-full px-5 py-3.5 bg-slate-50 border-2 border-transparent rounded-2xl focus:bg-white focus:border-brand-accent/20 outline-none transition-all font-bold text-sm appearance-none"
-                >
-                  <option value="">Selecione um aluno cadastrado...</option>
-                  {data.students.map(student => (
-                    <option key={student.id} value={student.id}>{student.name} - {student.class}</option>
-                  ))}
-                </select>
-                <ChevronDown className="absolute right-5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
-              </div>
+              <SearchableStudentSelect
+                students={data.students}
+                value={selectedStudentId}
+                onChange={setSelectedStudentId}
+              />
             </div>
           </div>
           <div className="space-y-2">
@@ -1092,31 +1095,132 @@ function LoanStatusBadge({ loan, showOverdueDays }: { loan: Loan, showOverdueDay
   );
 }
 
+function SearchableStudentSelect({
+  students,
+  value,
+  onChange,
+  error
+}: {
+  students: Student[],
+  value: string,
+  onChange: (id: string) => void,
+  error?: boolean
+}) {
+  const [isOpen, setIsOpen] = useState(false);
+  const [search, setSearch] = useState('');
+
+  const selectedStudent = students.find(s => s.id === value);
+  const filteredStudents = useMemo(() => {
+    return students.filter(s =>
+      s.name.toLowerCase().includes(search.toLowerCase()) ||
+      s.class.toLowerCase().includes(search.toLowerCase())
+    );
+  }, [students, search]);
+
+  return (
+    <div className="relative">
+      <input type="hidden" name="studentId" value={value} required />
+
+      <div
+        onClick={() => setIsOpen(!isOpen)}
+        className={cn(
+          "w-full px-5 py-3.5 bg-slate-50 border-2 rounded-2xl flex items-center justify-between cursor-pointer transition-all",
+          isOpen ? "bg-white border-brand-accent/20 shadow-lg shadow-brand-accent/5" : "border-transparent hover:bg-slate-100/80",
+          error && "border-rose-300 bg-rose-50",
+          !selectedStudent && "text-slate-400"
+        )}
+      >
+        <span className="font-bold text-sm truncate">
+          {selectedStudent ? `${selectedStudent.name} - ${selectedStudent.class}` : "Selecione um aluno cadastrado..."}
+        </span>
+        <ChevronDown className={cn("w-4 h-4 text-slate-400 transition-transform duration-300", isOpen && "rotate-180 text-brand-accent")} />
+      </div>
+
+      <AnimatePresence>
+        {isOpen && (
+          <>
+            <div className="fixed inset-0 z-40" onClick={() => setIsOpen(false)} />
+            <motion.div
+              initial={{ opacity: 0, y: -10, scale: 0.95 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: -10, scale: 0.95 }}
+              transition={{ duration: 0.15 }}
+              className="absolute z-50 top-full left-0 right-0 mt-2 bg-white/95 backdrop-blur-xl border border-slate-200/60 rounded-2xl shadow-2xl overflow-hidden"
+            >
+              <div className="p-3 border-b border-slate-100 bg-slate-50/50">
+                <div className="relative">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                  <input
+                    autoFocus
+                    type="text"
+                    placeholder="Pesquisar por nome ou turma..."
+                    className="w-full pl-9 pr-3 py-2 bg-white border border-slate-200 rounded-xl text-sm focus:border-brand-accent/40 focus:ring-2 focus:ring-brand-accent/10 outline-none transition-all"
+                    value={search}
+                    onChange={e => setSearch(e.target.value)}
+                  />
+                </div>
+              </div>
+              <div className="max-h-60 overflow-y-auto custom-scrollbar p-2">
+                {filteredStudents.length > 0 ? (
+                  filteredStudents.map(student => (
+                    <div
+                      key={student.id}
+                      onClick={() => {
+                        onChange(student.id);
+                        setIsOpen(false);
+                        setSearch('');
+                      }}
+                      className={cn(
+                        "px-4 py-3 rounded-xl cursor-pointer transition-all flex flex-col gap-0.5",
+                        value === student.id
+                          ? "bg-brand-accent/10 text-brand-accent"
+                          : "hover:bg-slate-50 text-slate-700"
+                      )}
+                    >
+                      <span className="font-bold text-sm">{student.name}</span>
+                      <span className="text-xs font-medium opacity-70">{student.class}</span>
+                    </div>
+                  ))
+                ) : (
+                  <div className="py-6 text-center text-slate-400 text-sm font-medium">
+                    Nenhum aluno encontrado
+                  </div>
+                )}
+              </div>
+            </motion.div>
+          </>
+        )}
+      </AnimatePresence>
+    </div>
+  );
+}
+
 function Modal({ isOpen, onClose, title, children }: { isOpen: boolean, onClose: () => void, title: string, children: React.ReactNode }) {
   return (
     <AnimatePresence>
       {isOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6">
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             onClick={onClose}
-            className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm"
+            className="absolute inset-0 bg-slate-900/40 backdrop-blur-md"
           />
           <motion.div
             initial={{ opacity: 0, scale: 0.95, y: 20 }}
             animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.95, y: 20 }}
-            className="relative bg-white w-full max-w-lg rounded-[2.5rem] shadow-2xl overflow-hidden border border-slate-200"
+            className="relative bg-white/95 backdrop-blur-2xl w-full max-w-lg rounded-[2.5rem] shadow-[0_0_40px_-10px_rgba(0,0,0,0.15)] overflow-hidden border border-white/60"
           >
-            <div className="p-8 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
+            <div className="absolute top-0 left-0 right-0 h-32 bg-gradient-to-b from-brand-accent/5 to-transparent pointer-events-none" />
+            <div className="p-8 pb-6 border-b border-slate-100/50 flex justify-between items-center relative z-10">
               <h3 className="text-xl font-bold tracking-tight text-slate-900">{title}</h3>
-              <button onClick={onClose} className="p-2 hover:bg-slate-200 rounded-full transition-colors">
-                <X className="w-5 h-5 text-slate-500" />
+              <button onClick={onClose} className="p-2.5 bg-slate-100/50 hover:bg-slate-200 text-slate-500 hover:text-slate-800 rounded-2xl transition-all">
+                <X className="w-5 h-5" />
               </button>
             </div>
-            <div className="p-8 max-h-[80vh] overflow-y-auto">
+            <div className="p-8 max-h-[80vh] overflow-y-auto custom-scrollbar relative z-10">
               {children}
             </div>
           </motion.div>
