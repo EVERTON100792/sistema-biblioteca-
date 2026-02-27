@@ -39,7 +39,7 @@ const tabLabels: Record<Tab, string> = {
 };
 
 export default function App() {
-  const [data, setData] = useState<LibraryData>({ books: [], loans: [], students: [] });
+  const [data, setData] = useState<LibraryData>(() => storageService.loadData());
   const [activeTab, setActiveTab] = useState<Tab>(() => {
     const saved = localStorage.getItem('bibliocontrol_active_tab') as Tab | null;
     const validTabs: Tab[] = ['dashboard', 'books', 'students', 'loans', 'settings'];
@@ -74,12 +74,6 @@ export default function App() {
 
   // Notifications
   const [notifications, setNotifications] = useState<{ id: string, message: string, type: 'warning' | 'info' }[]>([]);
-
-  // Load data on mount
-  useEffect(() => {
-    const savedData = storageService.loadData();
-    setData(savedData);
-  }, []);
 
   // Save data whenever it changes
   useEffect(() => {
@@ -189,37 +183,22 @@ export default function App() {
   const handleSaveLoan = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     const formData = new FormData(e.currentTarget);
-    const studentName = formData.get('studentName') as string;
-    const studentClass = formData.get('studentClass') as string;
+    const studentId = formData.get('studentId') as string;
     const bookId = formData.get('bookId') as string;
 
     const book = data.books.find(b => b.id === bookId);
     if (!book) return;
 
-    // Find or create student
-    let student = data.students.find(s =>
-      s.name.toLowerCase() === studentName.toLowerCase() &&
-      s.class.toLowerCase() === studentClass.toLowerCase()
-    );
-
-    let updatedStudents = [...data.students];
-    if (!student) {
-      student = {
-        id: crypto.randomUUID(),
-        name: studentName,
-        class: studentClass
-      };
-      updatedStudents.push(student);
-    }
+    const student = data.students.find(s => s.id === studentId);
+    if (!student) return;
 
     if (editingLoan) {
       setData(prev => ({
         ...prev,
-        students: updatedStudents,
         loans: prev.loans.map(l => l.id === editingLoan.id ? {
           ...l,
-          studentName: student!.name,
-          studentClass: student!.class,
+          studentName: student.name,
+          studentClass: student.class,
           bookId: book.id,
           bookTitle: book.title,
         } : l)
@@ -239,7 +218,6 @@ export default function App() {
       };
       setData(prev => ({
         ...prev,
-        students: updatedStudents,
         loans: [...prev.loans, newLoan]
       }));
     }
@@ -962,24 +940,21 @@ export default function App() {
         <form onSubmit={handleSaveLoan} className="space-y-6">
           <div className="space-y-4">
             <div className="space-y-2">
-              <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-1">Nome do Aluno</label>
-              <input
-                name="studentName"
-                required
-                defaultValue={editingLoan?.studentName}
-                placeholder="Nome completo do aluno"
-                className="w-full px-5 py-3.5 bg-slate-50 border-2 border-transparent rounded-2xl focus:bg-white focus:border-brand-accent/20 outline-none transition-all font-bold text-sm"
-              />
-            </div>
-            <div className="space-y-2">
-              <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-1">Turma / Série</label>
-              <input
-                name="studentClass"
-                required
-                defaultValue={editingLoan?.studentClass}
-                placeholder="Ex: 9º Ano A"
-                className="w-full px-5 py-3.5 bg-slate-50 border-2 border-transparent rounded-2xl focus:bg-white focus:border-brand-accent/20 outline-none transition-all font-bold text-sm"
-              />
+              <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-1">Aluno</label>
+              <div className="relative">
+                <select
+                  name="studentId"
+                  required
+                  defaultValue={editingLoan ? data.students.find(s => s.name === editingLoan.studentName && s.class === editingLoan.studentClass)?.id || '' : ''}
+                  className="w-full px-5 py-3.5 bg-slate-50 border-2 border-transparent rounded-2xl focus:bg-white focus:border-brand-accent/20 outline-none transition-all font-bold text-sm appearance-none"
+                >
+                  <option value="">Selecione um aluno cadastrado...</option>
+                  {data.students.map(student => (
+                    <option key={student.id} value={student.id}>{student.name} - {student.class}</option>
+                  ))}
+                </select>
+                <ChevronDown className="absolute right-5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
+              </div>
             </div>
           </div>
           <div className="space-y-2">
