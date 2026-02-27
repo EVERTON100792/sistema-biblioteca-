@@ -580,7 +580,7 @@ export default function App() {
                 </div>
 
                 {/* Desktop Table */}
-                <div className="hidden md:flex flex-col flex-1 bg-white rounded-[2rem] border border-slate-200/60 shadow-sm overflow-hidden min-h-[400px]">
+                <div className="hidden md:flex flex-col bg-white rounded-[2rem] border border-slate-200/60 shadow-sm overflow-hidden max-h-[calc(100vh-280px)]">
                   <div className="overflow-y-auto custom-scrollbar flex-1 relative">
                     <table className="w-full text-left border-collapse">
                       <thead className="sticky top-0 z-10">
@@ -664,7 +664,7 @@ export default function App() {
                 </div>
 
                 {/* Desktop Table */}
-                <div className="hidden md:flex flex-col flex-1 bg-white rounded-[2rem] border border-slate-200/60 shadow-sm overflow-hidden min-h-[400px]">
+                <div className="hidden md:flex flex-col bg-white rounded-[2rem] border border-slate-200/60 shadow-sm overflow-hidden max-h-[calc(100vh-280px)]">
                   <div className="overflow-y-auto custom-scrollbar flex-1 relative">
                     <table className="w-full text-left border-collapse">
                       <thead className="sticky top-0 z-10">
@@ -758,7 +758,7 @@ export default function App() {
                 </div>
 
                 {/* Desktop Table */}
-                <div className="hidden md:flex flex-col flex-1 bg-white rounded-[2rem] border border-slate-200/60 shadow-sm overflow-hidden min-h-[400px]">
+                <div className="hidden md:flex flex-col bg-white rounded-[2rem] border border-slate-200/60 shadow-sm overflow-hidden max-h-[calc(100vh-280px)]">
                   <div className="overflow-y-auto custom-scrollbar flex-1 relative">
                     <table className="w-full text-left border-collapse">
                       <thead className="sticky top-0 z-10">
